@@ -1,0 +1,15 @@
+# Normalizar fin de linea (el proyecto se edita en Windows y compila en CI Linux/Windows)
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.apk binary
+*.msi binary
+*.exe binary
+*.jar binary

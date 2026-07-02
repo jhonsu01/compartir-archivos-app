@@ -1,0 +1,68 @@
+# --- Android / Gradle ---
+.gradle/
+build/
+**/build/
+local.properties
+
+# --- Entregables y herramientas locales (no se commitean; van via Releases) ---
+dist/
+.tools/
+*.iml
+.idea/
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# --- Kotlin Multiplatform / Compose ---
+.kotlin/
+
+# --- Android keystore (nunca commitear) ---
+*.jks
+*.keystore
+keystore.properties
+
+# --- Firma / certificados Windows ---
+*.pfx
+*.p12
+*.snk
+codesign.properties
+
+# --- Credenciales / secretos ---
+.env
+.env.*
+credentials.json
+token.json
+*.secret
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Salidas de build / instaladores ---
+*.msi
+*.exe
+*.dmg
+*.deb
+*.rpm
+*.pkg
+output/
+
+# --- Memoria sensible (opcional: comenta para commitear memoria) ---
+# memory/**/items.json
+
+# --- ZCode / Claude artefactos ---
+.claude/
+.zcode/
+
+# --- Slurp / CodeGraph caches ---
+.slurp/audit.jsonl
+.codegraph/*.lock
+
+# --- Temporales ---
+.tmp/
+*.log

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "compartirarchivos-001",
+    "fact": "Inicio del proyecto CompartirArchivos: app Android+Windows de transferencia de archivos por LAN con emparejamiento PIN.",
+    "category": "milestone",
+    "timestamp": "2026-07-02",
+    "source": "2026-07-02",
+    "status": "active",
+    "supersededBy": null,
+    "relatedEntities": [],
+    "codeRefs": [],
+    "slurpQueries": ["discovery mdns pairing", "file transfer ktor"],
+    "lastAccessed": "2026-07-02",
+    "accessCount": 1
+  },
+  {
+    "id": "compartirarchivos-002",
+    "fact": "Stack elegido: Kotlin Multiplatform + Compose Multiplatform. Modulos shared/androidApp/desktopApp.",
+    "category": "context",
+    "timestamp": "2026-07-02",
+    "source": "2026-07-02",
+    "status": "active",
+    "supersededBy": null,
+    "relatedEntities": [],
+    "codeRefs": [],
+    "slurpQueries": ["kmp module structure"],
+    "lastAccessed": "2026-07-02",
+    "accessCount": 1
+  }
+]
