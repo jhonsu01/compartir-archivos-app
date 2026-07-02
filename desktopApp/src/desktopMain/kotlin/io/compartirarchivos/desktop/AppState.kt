@@ -148,6 +148,26 @@ class AppState {
         _currentPin.value = server.issuePin()
     }
 
+    /**
+     * Añade un dispositivo destino manualmente por IP:puerto. Fallback cuando
+     * mDNS no detecta al movil (tipico: firewall de Windows bloqueando inbound
+     * multicast UDP 5353). No depende de discovery.
+     */
+    fun addManualTarget(ip: String, port: Int = Protocol.DEFAULT_PORT): DeviceProfile {
+        val cleanIp = ip.trim().removePrefix("http://").removePrefix("https://").substringBefore("/")
+        val dev = DeviceProfile(
+            id = "manual:$cleanIp:$port",
+            name = "Manual $cleanIp",
+            type = DeviceType.MOBILE,
+            host = cleanIp,
+            port = port,
+        )
+        _devices.value = (_devices.value.filter { it.id != dev.id } + dev).sortedBy { it.name }
+        _sendTarget.value = dev
+        _status.value = "Dispositivo manual añadido: $cleanIp:$port"
+        return dev
+    }
+
     /** Marca archivos del explorador para enviar. */
     fun toggleSelectForSend(entry: FileEntry) {
         val current = _filesToSend.value

@@ -36,6 +36,15 @@ class AndroidAppState(private val context: Context) {
     private val identity = loadOrCreateIdentity(DeviceDetector.deviceName(), type)
     private val discovery = createDiscoveryService()
     private val fileSource = createFileSource()
+    private val javaFileSource = io.compartirarchivos.shared.fs.JavaFileSource()
+
+    // Modo del explorador: interno (java.io) o SAF.
+    private val _explorerMode = MutableStateFlow(ExplorerMode.INTERNAL)
+    val explorerMode: StateFlow<ExplorerMode> = _explorerMode.asStateFlow()
+
+    // Raices rapidas (Download, DCIM, Pictures...) para el explorador interno.
+    private val _quickRoots = MutableStateFlow<List<FileEntry>>(emptyList())
+    val quickRoots: StateFlow<List<FileEntry>> = _quickRoots.asStateFlow()
 
     // Carpeta de descargas por defecto (archivos externos de la app).
     private val defaultDownloadsDir = java.io.File(context.getExternalFilesDir(null) ?: context.filesDir, "Recibidos").apply { mkdirs() }
@@ -126,6 +135,38 @@ class AndroidAppState(private val context: Context) {
         _status.value = "Usando carpeta por defecto: ${defaultDownloadsDir.absolutePath}"
     }
 
+    /** Cambia al explorador interno (java.io) y carga las carpetas rápidas. */
+    fun useInternalExplorer() {
+        _explorerMode.value = ExplorerMode.INTERNAL
+        _treeRoot.value = null
+        scope.launch {
+            _quickRoots.value = javaFileSource.quickRoots()
+            _explorerEntries.value = _quickRoots.value
+        }
+    }
+
+    /** Cambia al explorador SAF (requiere carpeta concedida vía onPickRoot). */
+    fun useSafExplorer() {
+        _explorerMode.value = ExplorerMode.SAF
+        val root = _treeRoot.value
+        if (root != null) openExplorer(root) else {
+            _explorerEntries.value = emptyList()
+            _status.value = "Selecciona una carpeta con SAF"
+        }
+    }
+
+    /** Lista una carpeta del explorador interno por ruta absoluta. */
+    fun openInternalFolder(path: String) {
+        _treeRoot.value = null
+        scope.launch {
+            _explorerEntries.value = javaFileSource.list(path)
+        }
+    }
+
+    /** Lee un archivo de cualquier origen (interno java.io o SAF content://). */
+    suspend fun readFile(path: String): ByteArray =
+        if (path.startsWith("content://")) fileSource.read(path) else javaFileSource.read(path)
+
     fun start() {
         server.start()
         val ip = DeviceDetector.localWifiIp(context)
@@ -172,12 +213,42 @@ class AndroidAppState(private val context: Context) {
         }
     }
 
+    fun clearSelected() {
+        _selected.value = emptyList()
+    }
+
+    /** Añade archivos elegidos vía "Abrir con otra app" (URIs content://). */
+    fun addExternalUris(uris: List<android.net.Uri>) {
+        val entries = uris.mapIndexed { i, u ->
+            FileEntry(
+                name = runCatching {
+                    val cursor = context.contentResolver.query(u, null, null, null, null)
+                    cursor?.use {
+                        val idx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0 && it.moveToFirst()) it.getString(idx) else "archivo_$i"
+                    }
+                }.getOrNull() ?: "archivo_$i",
+                path = u.toString(),
+                isDirectory = false,
+                size = runCatching {
+                    val cursor = context.contentResolver.query(u, null, null, null, null)
+                    cursor?.use {
+                        val idx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (idx >= 0 && it.moveToFirst()) it.getLong(idx) else 0L
+                    }
+                }.getOrNull() ?: 0L,
+            )
+        }
+        _selected.value = (_selected.value + entries).distinctBy { it.path }
+        _status.value = "${entries.size} archivo(s) añadido(s)"
+    }
+
     fun sendTo(target: DeviceProfile, pin: String) {
         val files = _selected.value
         if (files.isEmpty()) { _status.value = "Selecciona archivos"; return }
         _status.value = "Enviando a ${target.name}..."
         scope.launch {
-            val outbound = files.map { OutboundFile(it.name, fileSource.read(it.path)) }
+            val outbound = files.map { OutboundFile(it.name, readFile(it.path)) }
             val client = TransferClient(target.httpUrl)
             val res = client.sendAll(identity.id, identity.name, type, pin, outbound)
             client.close()
@@ -207,3 +278,6 @@ class AndroidAppState(private val context: Context) {
         private const val KEY_DOWNLOAD_FOLDER = "download_folder_uri"
     }
 }
+
+/** Modo del explorador de archivos en Android. */
+enum class ExplorerMode { INTERNAL, SAF }

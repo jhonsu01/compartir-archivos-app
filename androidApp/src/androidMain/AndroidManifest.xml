@@ -9,9 +9,14 @@
     <!-- mDNS / multicast requiere CHANGE_WIFI_MULTICAST_STATE -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
-    <!-- Lectura de archivos (API <= 32). En API 33+ se usa SAF (no hace falta permiso) -->
+    <!-- Lectura de archivos: API <= 32 con READ_EXTERNAL_STORAGE;
+         API 33+ (Android 13+) usa READ_MEDIA_* por tipo. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
 
     <application
         android:name=".App"

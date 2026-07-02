@@ -39,7 +39,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.3.0",
+        title = "CompartirArchivos — v0.4.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
@@ -163,6 +163,13 @@ private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
                     Spacer(Modifier.height(8.dp))
                 if (devices.isEmpty()) {
                     Text("Buscando dispositivos en la red WiFi...", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Si no aparecen, puede ser el firewall de Windows (bloquea mDNS). " +
+                            "Usa \"Añadir por IP\" con la IP del móvil.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         devices.forEach { d ->
@@ -170,6 +177,11 @@ private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
                         }
                     }
                 }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // Conexión manual por IP (fallback cuando mDNS no detecta).
+                    ManualIpRow(onAdd = { ip -> state.addManualTarget(ip) })
                 }
             }
         }
@@ -202,6 +214,28 @@ private fun pickDirectoryDialog(): String? {
     return if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
         chooser.selectedFile.absolutePath
     } else null
+}
+
+/** Fila para añadir un dispositivo destino escribiendo su IP (fallback sin mDNS). */
+@Composable
+private fun ManualIpRow(onAdd: (String) -> Unit) {
+    var ip by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = ip,
+            onValueChange = { ip = it },
+            label = { Text("IP del dispositivo (ej. 192.168.1.5)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(
+            onClick = { onAdd(ip) },
+            enabled = ip.isNotBlank() && ip.contains("."),
+        ) {
+            Text("Añadir por IP")
+        }
+    }
 }
 
 @Composable
