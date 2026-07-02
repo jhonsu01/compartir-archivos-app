@@ -72,6 +72,16 @@ class AppState {
     private val _filesToSend = MutableStateFlow<List<FileEntry>>(emptyList())
     val filesToSend: StateFlow<List<FileEntry>> = _filesToSend.asStateFlow()
 
+    // Destino y PIN persistentes (sobreviven al cambio de pestana).
+    private val _sendTarget = MutableStateFlow<DeviceProfile?>(null)
+    val sendTarget: StateFlow<DeviceProfile?> = _sendTarget.asStateFlow()
+
+    private val _sendPin = MutableStateFlow("")
+    val sendPin: StateFlow<String> = _sendPin.asStateFlow()
+
+    fun setSendTarget(device: DeviceProfile?) { _sendTarget.value = device }
+    fun setSendPin(pin: String) { _sendPin.value = pin }
+
     private val _status = MutableStateFlow("Listo")
     val status: StateFlow<String> = _status.asStateFlow()
 
@@ -84,15 +94,13 @@ class AppState {
     /** Inicia servidor + discovery. */
     fun start() {
         server.start()
-        discovery.start(_selfProfile.value) {}
 
-        // Refrescar mi IP real para anunciarla bien
-        scope.launch {
-            val ip = bestLocalIp()
-            _selfProfile.value = _selfProfile.value.copy(host = ip)
-            // Reiniciar anuncio con la IP correcta seria ideal; en v0.1 el
-            // discovery ya se resuelve por IP en el receptor.
-        }
+        // Calcular la IP LAN real ANTES de arrancar el discovery, para que
+        // el servicio mDNS se anuncie y escuche sobre la interfaz correcta.
+        val realIp = bestLocalIp()
+        _selfProfile.value = _selfProfile.value.copy(host = realIp)
+
+        discovery.start(_selfProfile.value) {}
 
         scope.launch {
             discovery.events.collect { ev ->
@@ -155,6 +163,15 @@ class AppState {
                 is TransferResult.Error -> "Error: ${result.cause.message}"
             }
         }
+    }
+
+    /** Envio usando destino y PIN persistentes del StateFlow. */
+    fun send() {
+        val target = _sendTarget.value
+        val pin = _sendPin.value
+        if (target == null) { _status.value = "Selecciona un dispositivo destino"; return }
+        if (pin.length != 6) { _status.value = "Introduce el PIN de 6 digitos"; return }
+        sendTo(target, pin)
     }
 
     // --- Explorador ---

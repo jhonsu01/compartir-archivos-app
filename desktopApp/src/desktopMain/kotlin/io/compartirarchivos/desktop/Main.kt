@@ -1,17 +1,21 @@
 package io.compartirarchivos.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,9 +26,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import io.compartirarchivos.shared.fs.FileEntry
 import io.compartirarchivos.shared.model.DeviceProfile
 import io.compartirarchivos.shared.model.DeviceType
-import io.compartirarchivos.shared.fs.FileEntry
 import java.awt.Dimension
 
 fun main() = application {
@@ -37,7 +41,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.1.0",
+        title = "CompartirArchivos — v0.2.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
@@ -51,7 +55,7 @@ fun main() = application {
 private fun AppTheme(content: @Composable () -> Unit) {
     // Modo oscuro obligatorio (seccion 5)
     val dark = darkColorScheme(
-        primary = MaterialTheme.colorScheme.primary,
+        primary = androidx.compose.ui.graphics.Color(0xFF38BDF8),
         background = androidx.compose.ui.graphics.Color(0xFF101418),
         surface = androidx.compose.ui.graphics.Color(0xFF161B22),
     )
@@ -103,12 +107,14 @@ private fun AppScaffold(state: AppState) {
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             when (tab) {
-                Tab.DEVICES -> DevicesScreen(state)
+                Tab.DEVICES -> DevicesScreen(state) { device ->
+                    state.setSendTarget(device)
+                    tab = Tab.SEND
+                }
                 Tab.SEND -> SendScreen(state)
                 Tab.EXPLORER -> ExplorerScreen(state)
             }
-            // Barra de estado
-            Divider()
+            HorizontalDivider()
             Text(
                 "Estado: $status",
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -121,10 +127,11 @@ private fun AppScaffold(state: AppState) {
 /* ---------------- Pestaña: Dispositivos + PIN ---------------- */
 
 @Composable
-private fun DevicesScreen(state: AppState) {
+private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
     val devices by state.devices.collectAsState()
     val pin by state.currentPin.collectAsState()
     val self by state.selfProfile.collectAsState()
+    val target by state.sendTarget.collectAsState()
 
     Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         // Panel PIN
@@ -141,7 +148,7 @@ private fun DevicesScreen(state: AppState) {
                 Spacer(Modifier.height(8.dp))
                 Text("Válido 60 s. Compártelo solo con quien quieras recibir archivos.", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { state.refreshPin() }) {
+                Button(onClick = { state.refreshPin() }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Refresh, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("Generar nuevo PIN")
@@ -149,16 +156,18 @@ private fun DevicesScreen(state: AppState) {
             }
         }
 
-        // Lista de dispositivos encontrados
+        // Lista de dispositivos encontrados (clickeables para enviar)
         Card(modifier = Modifier.weight(1.4f)) {
             Column(Modifier.padding(16.dp)) {
                 Text("Dispositivos en la red", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 if (devices.isEmpty()) {
-                    Text("Buscando dispositivos...", style = MaterialTheme.typography.bodyMedium)
+                    Text("Buscando dispositivos en la red WiFi...", style = MaterialTheme.typography.bodyMedium)
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(devices, key = { it.id }) { d -> DeviceRow(d) }
+                        items(devices, key = { it.id }) { d ->
+                            DeviceRow(d, isSelected = target?.id == d.id) { onSelect(d) }
+                        }
                     }
                 }
             }
@@ -167,9 +176,14 @@ private fun DevicesScreen(state: AppState) {
 }
 
 @Composable
-private fun DeviceRow(d: DeviceProfile) {
+private fun DeviceRow(d: DeviceProfile, isSelected: Boolean, onClick: () -> Unit) {
+    val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     Row(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bg, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val icon = when (d.type) {
@@ -183,7 +197,11 @@ private fun DeviceRow(d: DeviceProfile) {
             Text(d.name, fontWeight = FontWeight.Medium)
             Text("${d.host}:${d.port} · ${d.type}", style = MaterialTheme.typography.bodySmall)
         }
-        AssistChip(onClick = {}, label = { Text("Detectado") })
+        if (isSelected) {
+            Icon(Icons.Filled.CheckCircle, contentDescription = "Seleccionado", tint = MaterialTheme.colorScheme.primary)
+        } else {
+            TextButton(onClick = onClick) { Text("Seleccionar") }
+        }
     }
 }
 
@@ -193,22 +211,37 @@ private fun DeviceRow(d: DeviceProfile) {
 private fun SendScreen(state: AppState) {
     val devices by state.devices.collectAsState()
     val selected by state.filesToSend.collectAsState()
-    var selectedDevice by remember { mutableStateOf<DeviceProfile?>(null) }
-    var pin by remember { mutableStateOf("") }
+    val target by state.sendTarget.collectAsState()
+    var pin by remember { mutableStateOf(state.sendPin.value) }
+    LaunchedEffect(pin) { state.setSendPin(pin) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Text("Enviar archivos", style = MaterialTheme.typography.titleMedium)
 
         Text("Destino:", style = MaterialTheme.typography.bodyMedium)
+        if (devices.isEmpty()) Text("No hay dispositivos. Ve a la pestaña Dispositivos.", style = MaterialTheme.typography.bodySmall)
         devices.forEach { d ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = selectedDevice?.id == d.id, onClick = { selectedDevice = d })
+            val isTarget = target?.id == d.id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (isTarget) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable { state.setSendTarget(d) }
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = isTarget, onClick = { state.setSendTarget(d) })
                 Text("${d.name} (${d.type})")
             }
         }
-        if (devices.isEmpty()) Text("No hay dispositivos. Ve a la pestaña Dispositivos.", style = MaterialTheme.typography.bodySmall)
 
-        Divider()
+        HorizontalDivider()
         Text("Archivos seleccionados: ${selected.size}")
         selected.forEach { Text("• ${it.name} (${it.size} bytes)", style = MaterialTheme.typography.bodySmall) }
 
@@ -216,12 +249,13 @@ private fun SendScreen(state: AppState) {
             value = pin,
             onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) pin = it },
             label = { Text("PIN del destino") },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(0.4f),
         )
 
         Button(
-            onClick = { selectedDevice?.let { state.sendTo(it, pin) } },
-            enabled = selectedDevice != null && pin.length == 6 && selected.isNotEmpty(),
+            onClick = { state.send() },
+            enabled = target != null && pin.length == 6 && selected.isNotEmpty(),
         ) {
             Icon(Icons.Filled.Send, contentDescription = null)
             Spacer(Modifier.width(6.dp))
@@ -241,22 +275,20 @@ private fun ExplorerScreen(state: AppState) {
 
     LaunchedEffect(Unit) { if (path == null) state.openExplorer(null) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Explorador de archivos", style = MaterialTheme.typography.titleMedium)
         Text("Ruta: ${path ?: "(home)"}", style = MaterialTheme.typography.bodySmall)
-        Divider()
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(entries, key = { it.path }) { entry ->
-                FileRow(
-                    entry = entry,
-                    isSelected = entry.path in selectedPaths,
-                    onClick = {
-                        if (entry.isDirectory) state.browseTo(entry)
-                        else state.toggleSelectForSend(entry)
-                    },
-                    onToggle = { state.toggleSelectForSend(entry) },
-                )
-            }
+        HorizontalDivider()
+        entries.forEach { entry ->
+            FileRow(
+                entry = entry,
+                isSelected = entry.path in selectedPaths,
+                onClick = {
+                    if (entry.isDirectory) state.browseTo(entry)
+                    else state.toggleSelectForSend(entry)
+                },
+                onToggle = { state.toggleSelectForSend(entry) },
+            )
         }
         Text("${selected.size} archivo(s) marcados para envío.", style = MaterialTheme.typography.bodySmall)
     }
@@ -267,8 +299,12 @@ private fun FileRow(entry: FileEntry, isSelected: Boolean, onClick: () -> Unit, 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(6.dp)
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+            .padding(4.dp)
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -25,6 +25,11 @@ class NsdDiscoveryService : DiscoveryService {
     @Volatile private var selfId: String? = null
     private val channel = Channel<DiscoveryEvent>(Channel.BUFFERED)
 
+    // Cola de resoluciones: NsdManager permite solo 1 resolve concurrente.
+    private val pendingResolves = ArrayDeque<NsdServiceInfo>()
+    @Volatile private var resolving = false
+    private val resolveLock = Any()
+
     private val ctx: Context
         get() = appContext ?: error("SharedInitializer.init(context) requerido")
 
@@ -66,25 +71,9 @@ class NsdDiscoveryService : DiscoveryService {
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                manager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                    override fun onServiceResolved(info: NsdServiceInfo) {
-                        val deviceId = info.attributes[Protocol.TXT_KEY_DEVICE_ID]
-                            ?.decodeToString() ?: return
-                        if (deviceId == selfId) return
-                        val name = info.attributes[Protocol.TXT_KEY_DEVICE_NAME]
-                            ?.decodeToString() ?: info.serviceName
-                        val type = DeviceType.fromName(
-                            info.attributes[Protocol.TXT_KEY_DEVICE_TYPE]?.decodeToString()
-                        )
-                        val host = info.host?.hostAddress ?: return
-                        channel.trySend(
-                            DiscoveryEvent.Found(
-                                DeviceProfile(deviceId, name, type, host, info.port)
-                            )
-                        )
-                    }
-                    override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
-                })
+                // NsdManager solo permite UNA resolucion concurrente. Encolamos
+                // y resolvemos de uno en uno para no perder servicios.
+                enqueueResolve(serviceInfo)
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -103,6 +92,65 @@ class NsdDiscoveryService : DiscoveryService {
         } catch (_: Throwable) {}
         nsdManager = null
         channel.close()
+    }
+
+    /** Encola un servicio para resolverlo cuando el resolve anterior termine. */
+    private fun enqueueResolve(info: NsdServiceInfo) {
+        synchronized(resolveLock) {
+            pendingResolves.addLast(info)
+            if (resolving) return
+            resolving = true
+        }
+        drainResolveQueue()
+    }
+
+    /** Resuelve servicios de la cola de uno en uno. */
+    private fun drainResolveQueue() {
+        val manager = nsdManager ?: return
+        val info = synchronized(resolveLock) { pendingResolves.removeFirstOrNull() }
+        if (info == null) {
+            synchronized(resolveLock) { resolving = false }
+            return
+        }
+        try {
+            manager.resolveService(info, object : NsdManager.ResolveListener {
+                override fun onServiceResolved(resolved: NsdServiceInfo) {
+                    try {
+                        val deviceId = resolved.attributes[Protocol.TXT_KEY_DEVICE_ID]
+                            ?.decodeToString()
+                        if (deviceId != null && deviceId != selfId) {
+                            val name = resolved.attributes[Protocol.TXT_KEY_DEVICE_NAME]
+                                ?.decodeToString() ?: resolved.serviceName
+                            val type = DeviceType.fromName(
+                                resolved.attributes[Protocol.TXT_KEY_DEVICE_TYPE]?.decodeToString()
+                            )
+                            val host = resolved.host?.hostAddress
+                            if (host != null) {
+                                channel.trySend(
+                                    DiscoveryEvent.Found(
+                                        DeviceProfile(deviceId, name, type, host, resolved.port)
+                                    )
+                                )
+                            }
+                        }
+                    } finally {
+                        drainResolveQueue() // siguiente
+                    }
+                }
+                override fun onResolveFailed(failed: NsdServiceInfo, errorCode: Int) {
+                    // No tragamos el error silenciosamente: lo reportamos y
+                    // continuamos con el siguiente servicio de la cola.
+                    channel.trySend(DiscoveryEvent.Error("Resolve fallido (code $errorCode): ${failed.serviceName}"))
+                    drainResolveQueue()
+                }
+            })
+        } catch (t: Throwable) {
+            // resolveService puede lanzar si ya hay uno en curso; reintentamos.
+            channel.trySend(DiscoveryEvent.Error("resolveService exception: ${t.message}"))
+            synchronized(resolveLock) {
+                resolving = false
+            }
+        }
     }
 }
 

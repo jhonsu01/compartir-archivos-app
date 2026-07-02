@@ -25,6 +25,20 @@
     "codeRefs": [],
     "slurpQueries": ["kmp module structure"],
     "lastAccessed": "2026-07-02",
+    "accessCount": 2
+  },
+  {
+    "id": "compartirarchivos-003",
+    "fact": "v0.1.0 publicada en GitHub Releases (jhonsu01/compartir-archivos-app) con APK 15MB + MSI 103MB generados por Actions. CI verde. Fases 1-4 implementadas.",
+    "category": "milestone",
+    "timestamp": "2026-07-02",
+    "source": "2026-07-02",
+    "status": "active",
+    "supersededBy": null,
+    "relatedEntities": [],
+    "codeRefs": [".github/workflows/release.yml", "desktopApp/build.gradle.kts", "androidApp/build.gradle.kts"],
+    "slurpQueries": ["release workflow github actions", "msi jpackage wix"],
+    "lastAccessed": "2026-07-02",
     "accessCount": 1
   }
 ]

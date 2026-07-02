@@ -73,6 +73,17 @@ class AndroidAppState(private val context: Context) {
     private val _selected = MutableStateFlow<List<FileEntry>>(emptyList())
     val selected: StateFlow<List<FileEntry>> = _selected.asStateFlow()
 
+    // Destino y PIN del envio: viven en el StateFlow (no en remember de UI)
+    // para sobrevivir a cambios de pestana (seleccionar destino -> explorador -> volver).
+    private val _sendTarget = MutableStateFlow<DeviceProfile?>(null)
+    val sendTarget: StateFlow<DeviceProfile?> = _sendTarget.asStateFlow()
+
+    private val _sendPin = MutableStateFlow("")
+    val sendPin: StateFlow<String> = _sendPin.asStateFlow()
+
+    fun setSendTarget(device: DeviceProfile?) { _sendTarget.value = device }
+    fun setSendPin(pin: String) { _sendPin.value = pin }
+
     private val _explorerEntries = MutableStateFlow<List<FileEntry>>(emptyList())
     val explorerEntries: StateFlow<List<FileEntry>> = _explorerEntries.asStateFlow()
 
@@ -141,6 +152,15 @@ class AndroidAppState(private val context: Context) {
                 is TransferResult.Error -> "Error: ${res.cause.message}"
             }
         }
+    }
+
+    /** Envio usando el destino y PIN persistentes del StateFlow. */
+    fun send() {
+        val target = _sendTarget.value
+        val pin = _sendPin.value
+        if (target == null) { _status.value = "Selecciona un dispositivo destino"; return }
+        if (pin.length != 6) { _status.value = "Introduce el PIN de 6 digitos"; return }
+        sendTo(target, pin)
     }
 
     fun stop() {
