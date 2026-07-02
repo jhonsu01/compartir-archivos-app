@@ -34,7 +34,11 @@ import io.compartirarchivos.shared.model.DeviceType
  * Raiz de la UI. Adapta tamano de iconos y layout segun TV vs movil.
  */
 @Composable
-fun AppRoot(state: AndroidAppState, onPickRoot: () -> Unit) {
+fun AppRoot(
+    state: AndroidAppState,
+    onPickRoot: () -> Unit,
+    onPickDownloadFolder: () -> Unit,
+) {
     DisposableEffect(Unit) {
         state.start()
         onDispose { /* el stop lo hace onDestroy */ }
@@ -73,7 +77,7 @@ fun AppRoot(state: AndroidAppState, onPickRoot: () -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    0 -> DevicesTab(state, iconSize) { device ->
+                    0 -> DevicesTab(state, iconSize, onPickDownloadFolder) { device ->
                         state.setSendTarget(device)
                         pendingNavigateToSend = true
                     }
@@ -100,12 +104,46 @@ fun AppRoot(state: AndroidAppState, onPickRoot: () -> Unit) {
 }
 
 @Composable
-private fun DevicesTab(state: AndroidAppState, iconSize: androidx.compose.ui.unit.Dp, onSelect: (DeviceProfile) -> Unit) {
+private fun DevicesTab(
+    state: AndroidAppState,
+    iconSize: androidx.compose.ui.unit.Dp,
+    onPickDownloadFolder: () -> Unit,
+    onSelect: (DeviceProfile) -> Unit,
+) {
     val devices by state.devices.collectAsState()
     val pin by state.pin.collectAsState()
     val target by state.sendTarget.collectAsState()
+    val downloadFolder by state.downloadFolder.collectAsState()
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-        // Card del PIN (anchura completa, ya no compite con otro card).
+        // --- Carpeta de descarga ---
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Carpeta de descarga", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(8.dp))
+                val label = downloadFolder?.let {
+                    // Mostrar el nombre legible de la carpeta SAF.
+                    runCatching { android.net.Uri.parse(it).lastPathSegment ?: it }.getOrDefault(it)
+                } ?: "Por defecto (archivos de la app)"
+                Text(label, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onPickDownloadFolder, modifier = Modifier.weight(1f)) {
+                        Text(if (downloadFolder == null) "Elegir carpeta" else "Cambiar carpeta")
+                    }
+                    if (downloadFolder != null) {
+                        OutlinedButton(onClick = { state.clearDownloadFolder() }, modifier = Modifier.weight(1f)) {
+                            Text("Por defecto")
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        // --- Card del PIN ---
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Tu PIN de emparejamiento", style = MaterialTheme.typography.titleSmall)

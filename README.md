@@ -47,6 +47,16 @@ Requisitos: JDK 17, Android SDK (compileSdk 36, minSdk 26).
 - Conexiones no autenticadas bloqueadas (token de sesión tras emparejamiento).
 - Permisos mínimos en Android.
 
+## Solución de problemas
+
+**El escritorio no detecta a los móviles (o viceversa):**
+1. Verifica que **todos** los dispositivos están en la **misma red WiFi** (no red de invitados, que suele aislar clientes).
+2. **Firewall de Windows**: permite que la app `CompartirArchivos.exe` (o `java.exe`) reciba conexiones en redes privadas. Al primer arranque Windows pregunta; responde "Permitir". Si la bloqueaste, ve a *Panel de control → Firewall de Windows → Permitir una aplicación*.
+3. Algunos routers activan **AP Isolation / Client Isolation**, que impide que los dispositivos se vean entre sí aunque estén en la misma WiFi. Desactívalo en la configuración del router, o prueba creando un hotspot desde el móvil.
+4. En Android, concede el acceso a archivos al abrir el explorador (SAF).
+
+**Error "Fail to prepare request body" (v0.2.0):** corregido en v0.3.0 (faltaba `Content-Type: application/json` en el cliente Ktor 3.x).
+
 ## Roadmap
 
 Ver [`guia_app_transferencia_archivos.md`](guia_app_transferencia_archivos.md) para el plan completo (Fases 1–5).

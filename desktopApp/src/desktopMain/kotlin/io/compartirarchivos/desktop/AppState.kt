@@ -37,7 +37,19 @@ class AppState {
     private val discovery = createDiscoveryService()
     private val fileSource = createFileSource()
 
-    private val sinkDir: Path = Paths.get(System.getProperty("user.home"), "Downloads", "CompartirArchivos").also { Files.createDirectories(it) }
+    // Carpeta de descarga: persistida en ~/.compartirarchivos/download_folder.txt.
+    private val sinkConfigDir: Path = Paths.get(System.getProperty("user.home"), ".compartirarchivos").also { Files.createDirectories(it) }
+    private val sinkConfigFile: Path = sinkConfigDir.resolve("download_folder.txt")
+    private val defaultSinkDir: Path = Paths.get(System.getProperty("user.home"), "Downloads", "CompartirArchivos").also { Files.createDirectories(it) }
+    private val sinkDirRef = java.util.concurrent.atomic.AtomicReference(
+        runCatching {
+            val p = Paths.get(Files.readString(sinkConfigFile).trim())
+            if (Files.isDirectory(p)) p else defaultSinkDir
+        }.getOrDefault(defaultSinkDir)
+    )
+
+    private val _downloadFolder = MutableStateFlow(sinkDirRef.get().toString())
+    val downloadFolder: StateFlow<String> = _downloadFolder.asStateFlow()
 
     private val server = ReceiveServer(
         ReceiverConfig(
@@ -46,7 +58,8 @@ class AppState {
         ),
         FileSink { name, bytes ->
             try {
-                val target = sinkDir.resolve(sanitize(name))
+                val dir = sinkDirRef.get().also { Files.createDirectories(it) }
+                val target = dir.resolve(sanitize(name))
                 Files.write(target, bytes)
                 target.toString()
             } catch (t: Throwable) {
@@ -55,6 +68,15 @@ class AppState {
             }
         }
     )
+
+    /** Cambia la carpeta de descarga y la persiste. */
+    fun setDownloadFolder(path: Path) {
+        Files.createDirectories(path)
+        sinkDirRef.set(path)
+        Files.writeString(sinkConfigFile, path.toString())
+        _downloadFolder.value = path.toString()
+        _status.value = "Carpeta de descarga: $path"
+    }
 
     // --- Estado expuesto a la UI ---
 

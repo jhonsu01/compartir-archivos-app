@@ -58,11 +58,11 @@ class JmdnsDiscoveryService : DiscoveryService {
 
     override fun start(self: DeviceProfile, onStarted: () -> Unit) {
         if (jmdns != null) return
-        // Bind a la interfaz de red real (WiFi/LAN), no a loopback ni a
-        // adaptadores virtuales (Docker/VMware/Hyper-V). Esto es critico en
-        // Windows donde InetAddress.getLocalHost() suele resolver a loopback.
-        val iface = bestLanInterface()
-        val mdns = if (iface != null) JmDNS.create(iface) else JmDNS.create()
+        // Bind a TODAS las interfaces (0.0.0.0). En Windows, atar JmDNS a una
+        // sola NIC suele fallar cuando hay adaptadores virtuales (Docker/WSL/
+        // Hyper-V/VMware): o bien se elige la NIC equivocada, o los multicast
+        // no cruzan entre interfaces. Crear sobre 0.0.0.0 recibe de todas.
+        val mdns = JmDNS.create()
         jmdns = mdns
 
         // Anunciar este dispositivo.
@@ -84,11 +84,30 @@ class JmdnsDiscoveryService : DiscoveryService {
 
         // Escuchar otros.
         mdns.addServiceListener(Protocol.MDNS_SERVICE_TYPE, listener)
+
+        // Sondeo activo: en WiFi los paquetes multicast se pierden con frecuencia
+        // y el desktop dejaria de ver al movil. Cada 5s re-consultamos la lista
+        // de servicios para forzar anuncios; el listener descarta duplicados.
+        pollThread = Thread({
+            while (!Thread.currentThread().isInterrupted) {
+                try {
+                    Thread.sleep(5_000)
+                    jmdns?.list(Protocol.MDNS_SERVICE_TYPE)
+                } catch (_: InterruptedException) {
+                    break
+                } catch (_: Throwable) {}
+            }
+        }, "jmdns-poll").apply { isDaemon = true; start() }
+
         onStarted()
     }
 
+    @Volatile private var pollThread: Thread? = null
+
     override fun stop() {
         try {
+            pollThread?.interrupt()
+            pollThread = null
             jmdns?.unregisterAllServices()
             jmdns?.close()
         } catch (_: Throwable) {}
@@ -99,25 +118,10 @@ class JmdnsDiscoveryService : DiscoveryService {
 }
 
 /**
- * Elige la mejor interfaz IPv4 para mDNS: la primera que este UP, no sea
- * loopback ni virtual, y tenga una IPv4 valida. Devuelve null si no halla
- * ninguna (entonces el llamador usara JmDNS.create() sobre 0.0.0.0).
+ * Heuristica: nombres de interfaz WiFi suelen llevar wlan/wi-fi/wireless.
+ * (Reservada para futuras optimizaciones; por ahora usamos 0.0.0.0.)
  */
-private fun bestLanInterface(): InetAddress? {
-    return try {
-        NetworkInterface.getNetworkInterfaces()
-            .toList()
-            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-            .sortedByDescending { it.isWirelessInterface() }
-            .flatMap { it.inetAddresses.toList() }
-            .filter { it is Inet4Address && !it.isLoopbackAddress }
-            .firstOrNull()
-    } catch (_: Throwable) {
-        null
-    }
-}
-
-/** Heuristica simple: nombres de interfaz WiFi suelen llevar wlan/wi-fi/wireless. */
+@Suppress("unused")
 private fun NetworkInterface.isWirelessInterface(): Boolean {
     val n = name.lowercase()
     return n.contains("wlan") || n.contains("wi-fi") || n.contains("wireless") || n.contains("wifi")

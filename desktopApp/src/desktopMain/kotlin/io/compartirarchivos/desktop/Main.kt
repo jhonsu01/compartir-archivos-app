@@ -3,8 +3,6 @@ package io.compartirarchivos.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -41,7 +39,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.2.0",
+        title = "CompartirArchivos — v0.3.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
@@ -132,47 +130,78 @@ private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
     val pin by state.currentPin.collectAsState()
     val self by state.selfProfile.collectAsState()
     val target by state.sendTarget.collectAsState()
+    val downloadFolder by state.downloadFolder.collectAsState()
 
-    Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Panel PIN
-        Card(modifier = Modifier.weight(1f)) {
-            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Tu PIN de emparejamiento", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    pin ?: "------",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text("Válido 60 s. Compártelo solo con quien quieras recibir archivos.", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { state.refreshPin() }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Generar nuevo PIN")
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Panel PIN
+            Card(modifier = Modifier.weight(1f)) {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Tu PIN de emparejamiento", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        pin ?: "------",
+                        style = MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Válido 60 s. Compártelo solo con quien quieras recibir archivos.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { state.refreshPin() }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Generar nuevo PIN")
+                    }
                 }
             }
-        }
 
-        // Lista de dispositivos encontrados (clickeables para enviar)
-        Card(modifier = Modifier.weight(1.4f)) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Dispositivos en la red", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+            // Lista de dispositivos encontrados (clickeables para enviar)
+            Card(modifier = Modifier.weight(1.4f)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Dispositivos en la red", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
                 if (devices.isEmpty()) {
                     Text("Buscando dispositivos en la red WiFi...", style = MaterialTheme.typography.bodyMedium)
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(devices, key = { it.id }) { d ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        devices.forEach { d ->
                             DeviceRow(d, isSelected = target?.id == d.id) { onSelect(d) }
                         }
                     }
                 }
+                }
+            }
+        }
+
+        // Carpeta de descarga
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Carpeta de descarga", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(downloadFolder, style = MaterialTheme.typography.bodySmall)
+                }
+                Button(onClick = {
+                    pickDirectoryDialog()?.let { state.setDownloadFolder(java.nio.file.Paths.get(it)) }
+                }) {
+                    Text("Elegir carpeta")
+                }
             }
         }
     }
+}
+
+/** Diálogo nativo de selección de directorio (Swing JFileChooser). */
+private fun pickDirectoryDialog(): String? {
+    val chooser = javax.swing.JFileChooser().apply {
+        fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+        isAcceptAllFileFilterUsed = false
+    }
+    return if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+        chooser.selectedFile.absolutePath
+    } else null
 }
 
 @Composable

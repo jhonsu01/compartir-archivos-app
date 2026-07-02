@@ -37,8 +37,13 @@ class AndroidAppState(private val context: Context) {
     private val discovery = createDiscoveryService()
     private val fileSource = createFileSource()
 
-    // Carpeta de descargas dentro de archivos externos de la app
-    private val downloadsDir = java.io.File(context.getExternalFilesDir(null) ?: context.filesDir, "Recibidos").apply { mkdirs() }
+    // Carpeta de descargas por defecto (archivos externos de la app).
+    private val defaultDownloadsDir = java.io.File(context.getExternalFilesDir(null) ?: context.filesDir, "Recibidos").apply { mkdirs() }
+
+    // Carpeta de descarga elegida por el usuario (URI tree SAF), persistida.
+    private val prefs = context.getSharedPreferences("compartirarchivos_prefs", Context.MODE_PRIVATE)
+    private val _downloadFolder = MutableStateFlow<String?>(prefs.getString(KEY_DOWNLOAD_FOLDER, null))
+    val downloadFolder: StateFlow<String?> = _downloadFolder.asStateFlow()
 
     private val server = ReceiveServer(
         ReceiverConfig(
@@ -48,9 +53,22 @@ class AndroidAppState(private val context: Context) {
         FileSink { name, bytes ->
             try {
                 val safe = name.replace("..", "").replace("/", "_").replace("\\", "_").trim().ifEmpty { "archivo" }
-                val target = java.io.File(downloadsDir, safe)
-                target.writeBytes(bytes)
-                target.absolutePath
+                val treeUri = _downloadFolder.value
+                if (treeUri != null) {
+                    // Guardar via SAF (DocumentFile) en la carpeta elegida.
+                    val tree = DocumentFile.fromTreeUri(context, android.net.Uri.parse(treeUri))
+                        ?: return@FileSink null
+                    val existing = tree.findFile(safe)
+                    existing?.delete()
+                    val doc = tree.createFile("application/octet-stream", safe) ?: return@FileSink null
+                    context.contentResolver.openOutputStream(doc.uri)?.use { it.write(bytes) }
+                    doc.uri.toString()
+                } else {
+                    // Fallback: carpeta por defecto de la app.
+                    val target = java.io.File(defaultDownloadsDir, safe)
+                    target.writeBytes(bytes)
+                    target.absolutePath
+                }
             } catch (t: Throwable) {
                 t.printStackTrace()
                 null
@@ -90,6 +108,23 @@ class AndroidAppState(private val context: Context) {
     /** Raiz tree del explorador (URI concedida con ACTION_OPEN_DOCUMENT_TREE). */
     private val _treeRoot = MutableStateFlow<String?>(null)
     val treeRoot: StateFlow<String?> = _treeRoot.asStateFlow()
+
+    /** Establece la carpeta de descarga (URI tree SAF), persistiéndola. */
+    fun setDownloadFolder(uri: android.net.Uri) {
+        val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try { context.contentResolver.takePersistableUriPermission(uri, flags) } catch (_: Throwable) {}
+        _downloadFolder.value = uri.toString()
+        prefs.edit().putString(KEY_DOWNLOAD_FOLDER, uri.toString()).apply()
+        _status.value = "Carpeta de descarga actualizada"
+    }
+
+    /** Limpia la carpeta personalizada y vuelve a la por defecto. */
+    fun clearDownloadFolder() {
+        _downloadFolder.value = null
+        prefs.edit().remove(KEY_DOWNLOAD_FOLDER).apply()
+        _status.value = "Usando carpeta por defecto: ${defaultDownloadsDir.absolutePath}"
+    }
 
     fun start() {
         server.start()
@@ -166,5 +201,9 @@ class AndroidAppState(private val context: Context) {
     fun stop() {
         discovery.stop()
         server.stop()
+    }
+
+    companion object {
+        private const val KEY_DOWNLOAD_FOLDER = "download_folder_uri"
     }
 }

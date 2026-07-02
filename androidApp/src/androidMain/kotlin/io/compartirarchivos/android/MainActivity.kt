@@ -31,6 +31,12 @@ class MainActivity : ComponentActivity() {
         if (uri != null) state.setTreeRoot(uri)
     }
 
+    private val downloadFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) state.setDownloadFolder(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Multicast lock para que mDNS funcione con WiFi (CHANGE_WIFI_MULTICAST_STATE)
@@ -39,7 +45,11 @@ class MainActivity : ComponentActivity() {
         state = AndroidAppState(applicationContext)
         setContent {
             CompartirArchivosTheme {
-                AppRoot(state = state, onPickRoot = { openTreeLauncher.launch(null) })
+                AppRoot(
+                    state = state,
+                    onPickRoot = { openTreeLauncher.launch(null) },
+                    onPickDownloadFolder = { downloadFolderLauncher.launch(null) },
+                )
             }
         }
     }
