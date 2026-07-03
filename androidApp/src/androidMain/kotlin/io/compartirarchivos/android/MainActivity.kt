@@ -55,6 +55,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // "Mover a": elige carpeta destino para mover un archivo recibido.
+    private var pendingMoveEntry: io.compartirarchivos.shared.fs.FileEntry? = null
+    private val moveToLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        val entry = pendingMoveEntry
+        pendingMoveEntry = null
+        if (uri != null && entry != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            } catch (_: Throwable) {}
+            state.moveReceived(entry, uri)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acquireMulticastLock()
@@ -67,6 +85,7 @@ class MainActivity : ComponentActivity() {
                     onPickDownloadFolder = { downloadFolderLauncher.launch(null) },
                     onOpenExternalFiles = { openFileLauncher.launch(arrayOf("*/*")) },
                     onRequestStoragePermission = { requestStoragePermission() },
+                    onMoveTo = { entry -> pendingMoveEntry = entry; moveToLauncher.launch(null) },
                 )
             }
         }

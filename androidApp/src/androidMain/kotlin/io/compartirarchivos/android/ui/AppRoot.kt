@@ -41,6 +41,7 @@ fun AppRoot(
     onPickDownloadFolder: () -> Unit,
     onOpenExternalFiles: () -> Unit,
     onRequestStoragePermission: () -> Unit,
+    onMoveTo: (io.compartirarchivos.shared.fs.FileEntry) -> Unit,
 ) {
     DisposableEffect(Unit) {
         state.start()
@@ -49,7 +50,7 @@ fun AppRoot(
 
     val self by state.self.collectAsState()
     val status by state.status.collectAsState()
-    var tab by remember { mutableStateOf(0) } // 0 = Recibir, 1 = Enviar
+    var tab by remember { mutableStateOf(0) } // 0 = Recibir, 1 = Enviar, 2 = Recibidos
     var showDownloadDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -69,6 +70,7 @@ fun AppRoot(
                 TabRow(selectedTabIndex = tab) {
                     Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Recibir") }, icon = { Icon(Icons.Filled.Download, contentDescription = null) })
                     Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Enviar") }, icon = { Icon(Icons.Filled.Send, contentDescription = null) })
+                    Tab(selected = tab == 2, onClick = { tab = 2; state.refreshReceivedFiles() }, text = { Text("Recibidos") }, icon = { Icon(Icons.Filled.Folder, contentDescription = null) })
                 }
             }
         },
@@ -83,6 +85,7 @@ fun AppRoot(
                         onOpenExternalFiles = onOpenExternalFiles,
                         onRequestStoragePermission = onRequestStoragePermission,
                     )
+                    2 -> ReceivedTab(state, onMoveTo = onMoveTo)
                 }
             }
             HorizontalDivider()
@@ -275,6 +278,105 @@ private fun FileItemRow(e: FileEntry, isSelected: Boolean, onClick: () -> Unit, 
             }
             if (!e.isDirectory) Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
         }
+    }
+}
+
+/* ---------------- RECIBIDOS ---------------- */
+
+@Composable
+private fun ReceivedTab(state: AndroidAppState, onMoveTo: (io.compartirarchivos.shared.fs.FileEntry) -> Unit) {
+    val received by state.receivedFiles.collectAsState()
+    val folder by state.downloadFolder.collectAsState()
+    var menuFor by remember { mutableStateOf<io.compartirarchivos.shared.fs.FileEntry?>(null) }
+    var renameFor by remember { mutableStateOf<io.compartirarchivos.shared.fs.FileEntry?>(null) }
+    var deleteFor by remember { mutableStateOf<io.compartirarchivos.shared.fs.FileEntry?>(null) }
+
+    LaunchedEffect(Unit) { state.refreshReceivedFiles() }
+
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Archivos recibidos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            IconButton(onClick = { state.refreshReceivedFiles() }) { Icon(Icons.Filled.Refresh, contentDescription = "Actualizar") }
+        }
+        Text(
+            "Carpeta: ${folder?.let { runCatching { android.net.Uri.parse(it).lastPathSegment ?: it }.getOrDefault(it) } ?: "archivos de la app"}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        HorizontalDivider()
+        if (received.isEmpty()) {
+            Text("Aún no has recibido archivos.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            received.forEach { f ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { menuFor = f },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Send, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(f.name, fontWeight = FontWeight.Medium)
+                            Text("${f.size} bytes", style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { menuFor = f }) { Icon(Icons.Filled.Settings, contentDescription = "Opciones") }
+                    }
+                }
+            }
+        }
+    }
+
+    // Menú de acciones por archivo.
+    if (menuFor != null) {
+        val entry = menuFor!!
+        AlertDialog(
+            onDismissRequest = { menuFor = null },
+            confirmButton = {},
+            title = { Text(entry.name) },
+            text = {
+                Column {
+                    MenuOption("Abrir") { state.openReceived(entry); menuFor = null }
+                    MenuOption("Mover a…") { onMoveTo(entry); menuFor = null }
+                    MenuOption("Renombrar") { renameFor = entry; menuFor = null }
+                    MenuOption("Borrar", danger = true) { deleteFor = entry; menuFor = null }
+                }
+            },
+        )
+    }
+
+    // Diálogo renombrar.
+    if (renameFor != null) {
+        var newName by remember { mutableStateOf(renameFor!!.name) }
+        AlertDialog(
+            onDismissRequest = { renameFor = null },
+            title = { Text("Renombrar") },
+            text = {
+                OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, label = { Text("Nuevo nombre") })
+            },
+            confirmButton = { Button(onClick = { state.renameReceived(renameFor!!, newName); renameFor = null }) { Text("Guardar") } },
+            dismissButton = { TextButton(onClick = { renameFor = null }) { Text("Cancelar") } },
+        )
+    }
+
+    // Confirmación borrar.
+    if (deleteFor != null) {
+        AlertDialog(
+            onDismissRequest = { deleteFor = null },
+            title = { Text("¿Borrar archivo?") },
+            text = { Text("Se eliminará \"${deleteFor!!.name}\" definitivamente.") },
+            confirmButton = { Button(onClick = { state.deleteReceived(deleteFor!!); deleteFor = null }) { Text("Borrar") } },
+            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancelar") } },
+        )
+    }
+}
+
+@Composable
+private fun MenuOption(label: String, danger: Boolean = false, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (danger) ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.textButtonColors(),
+    ) {
+        Text(label, modifier = Modifier.fillMaxWidth())
     }
 }
 

@@ -158,6 +158,27 @@ class AppState {
         }
     }
 
+    /** Añade archivos elegidos con el diálogo nativo de Windows (rutas absolutas). */
+    fun addFilesFromPaths(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val entries = paths.mapNotNull { p ->
+            val f = java.io.File(p)
+            if (f.isFile) FileEntry(f.name, f.absolutePath, isDirectory = false, f.length()) else null
+        }
+        val current = _filesToSend.value
+        _filesToSend.value = (current + entries).distinctBy { it.path }
+        _status.value = "${entries.size} archivo(s) añadido(s)"
+    }
+
+    /** Quita un archivo de la selección. */
+    fun removeSelected(entry: FileEntry) {
+        _filesToSend.value = _filesToSend.value.filterNot { it.path == entry.path }
+    }
+
+    fun clearSelected() {
+        _filesToSend.value = emptyList()
+    }
+
     /** Envia los archivos seleccionados a [target], pidiendo antes el PIN al usuario. */
     fun sendTo(target: DeviceProfile, pin: String) {
         val files = _filesToSend.value

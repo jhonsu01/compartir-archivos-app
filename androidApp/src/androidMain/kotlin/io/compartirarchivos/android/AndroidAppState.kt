@@ -118,6 +118,10 @@ class AndroidAppState(private val context: Context) {
     private val _treeRoot = MutableStateFlow<String?>(null)
     val treeRoot: StateFlow<String?> = _treeRoot.asStateFlow()
 
+    /** Archivos recibidos (lista de la carpeta de descarga actual). */
+    private val _receivedFiles = MutableStateFlow<List<FileEntry>>(emptyList())
+    val receivedFiles: StateFlow<List<FileEntry>> = _receivedFiles.asStateFlow()
+
     /** Establece la carpeta de descarga (URI tree SAF), persistiéndola. */
     fun setDownloadFolder(uri: android.net.Uri) {
         val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -272,6 +276,123 @@ class AndroidAppState(private val context: Context) {
     fun stop() {
         discovery.stop()
         server.stop()
+    }
+
+    // ---------------- Archivos recibidos ----------------
+
+    /** Recarga la lista de archivos recibidos desde la carpeta de descarga actual. */
+    fun refreshReceivedFiles() {
+        scope.launch {
+            val treeUri = _downloadFolder.value
+            val entries = if (treeUri != null) {
+                val tree = DocumentFile.fromTreeUri(context, android.net.Uri.parse(treeUri))
+                tree?.listFiles()
+                    ?.filter { it.isFile }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.map {
+                        FileEntry(it.name ?: "(sin nombre)", it.uri.toString(), false, it.length())
+                    } ?: emptyList()
+            } else {
+                defaultDownloadsDir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.map { FileEntry(it.name, it.absolutePath, false, it.length()) } ?: emptyList()
+            }
+            _receivedFiles.value = entries
+        }
+    }
+
+    /** Intenta abrir un archivo recibido con la app adecuada. Devuelve true si lanzó. */
+    fun openReceived(entry: FileEntry): Boolean {
+        return try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                val mime = context.contentResolver.getType(android.net.Uri.parse(entry.path))
+                    ?: androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        java.io.File(entry.path),
+                    ).let { context.contentResolver.getType(it) } ?: "*/*"
+                if (entry.path.startsWith("content://")) {
+                    setDataAndType(android.net.Uri.parse(entry.path), mime)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } else {
+                    val file = java.io.File(entry.path)
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context, "${context.packageName}.fileprovider", file
+                    )
+                    setDataAndType(uri, mime)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        } catch (t: Throwable) {
+            _status.value = "No hay app para abrir: ${t.message}"
+            false
+        }
+    }
+
+    /** Mueve un archivo recibido a otra carpeta SAF (destino elegido por el usuario). */
+    fun moveReceived(entry: FileEntry, destTreeUri: android.net.Uri): Boolean {
+        return try {
+            val src = if (entry.path.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, android.net.Uri.parse(entry.path))
+            } else {
+                DocumentFile.fromFile(java.io.File(entry.path))
+            } ?: return false
+            val destTree = DocumentFile.fromTreeUri(context, destTreeUri) ?: return false
+            // Copiar bytes al destino y borrar el original.
+            val dest = destTree.createFile("application/octet-stream", entry.name) ?: return false
+            context.contentResolver.openInputStream(src.uri)?.use { input ->
+                context.contentResolver.openOutputStream(dest.uri)?.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            src.delete()
+            _status.value = "Movido a ${dest.name ?: ""}"
+            refreshReceivedFiles()
+            true
+        } catch (t: Throwable) {
+            _status.value = "Error al mover: ${t.message}"
+            false
+        }
+    }
+
+    /** Renombra un archivo recibido. */
+    fun renameReceived(entry: FileEntry, newName: String): Boolean {
+        if (newName.isBlank()) return false
+        return try {
+            if (entry.path.startsWith("content://")) {
+                val doc = DocumentFile.fromSingleUri(context, android.net.Uri.parse(entry.path)) ?: return false
+                doc.renameTo(newName)
+            } else {
+                java.io.File(entry.path).renameTo(java.io.File(entry.path).resolveSibling(newName))
+            }
+            _status.value = "Renombrado a $newName"
+            refreshReceivedFiles()
+            true
+        } catch (t: Throwable) {
+            _status.value = "Error al renombrar: ${t.message}"
+            false
+        }
+    }
+
+    /** Borra un archivo recibido. */
+    fun deleteReceived(entry: FileEntry): Boolean {
+        return try {
+            if (entry.path.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, android.net.Uri.parse(entry.path))?.delete() ?: false
+            } else {
+                java.io.File(entry.path).delete()
+            }
+            _status.value = "Borrado: ${entry.name}"
+            refreshReceivedFiles()
+            true
+        } catch (t: Throwable) {
+            _status.value = "Error al borrar: ${t.message}"
+            false
+        }
     }
 
     companion object {
