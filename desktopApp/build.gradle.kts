@@ -39,7 +39,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
 
             packageName = "CompartirArchivos"
-            packageVersion = "0.7.0"
+            packageVersion = "0.8.0"
             description = "Comparte archivos por red local entre Android y Windows"
             vendor = "CompartirArchivos"
             copyright = "© 2026 CompartirArchivos"

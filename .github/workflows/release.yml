@@ -127,3 +127,28 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # ---------------------------------------------------------------
+  # Mantener SOLO la ultima release: borra releases y tags anteriores
+  # ---------------------------------------------------------------
+  cleanup:
+    name: Mantener solo la ultima release
+    runs-on: ubuntu-latest
+    needs: [apk, msi]
+    steps:
+      - name: Borrar releases y tags antiguos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT: ${{ github.ref_name }}
+        run: |
+          set -e
+          echo "Manteniendo solo la release actual: $CURRENT"
+          # Lista todas las releases (por tag) y borra las que no sean la actual.
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            if [ "$tag" != "$CURRENT" ]; then
+              echo "Borrando release y tag $tag ..."
+              gh release delete "$tag" --yes --cleanup-tag || echo "No se pudo borrar release $tag"
+            fi
+          done
+          echo "Hecho. Releases restantes:"
+          gh release list

@@ -39,7 +39,7 @@ fun main() = application {
     }
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.7.0",
+        title = "CompartirArchivos — v0.8.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
