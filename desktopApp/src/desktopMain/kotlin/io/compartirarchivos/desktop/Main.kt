@@ -39,7 +39,7 @@ fun main() = application {
     }
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.6.0",
+        title = "CompartirArchivos — v0.7.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
@@ -105,6 +105,24 @@ private fun AppScaffold(state: AppState) {
             HorizontalDivider()
             Text("Estado: $status", Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodySmall)
         }
+    }
+
+    // Diálogo de confirmación de envío.
+    val result by state.sendResult.collectAsState()
+    result?.let { outcome ->
+        AlertDialog(
+            onDismissRequest = { state.clearSendResult() },
+            confirmButton = { Button(onClick = { state.clearSendResult() }) { Text("Aceptar") } },
+            title = {
+                Text(
+                    when (outcome) {
+                        is SendOutcome.Success -> "Envío completado"
+                        else -> "No se pudo enviar"
+                    }
+                )
+            },
+            text = { Text(outcome.message()) },
+        )
     }
 }
 

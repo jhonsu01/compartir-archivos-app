@@ -302,60 +302,89 @@ class AndroidAppState(private val context: Context) {
         }
     }
 
-    /** Intenta abrir un archivo recibido con la app adecuada. Devuelve true si lanzó. */
+    /**
+    /** Deduce el MIME por extension (apk, imagen, audio, video, texto, pdf). */
+     * extensión (más fiable que contentResolver.getType para archivos de la app)
+     * y soporta .apk (gestor de paquetes), imágenes, audio, vídeo, texto, PDF.
+     */
     fun openReceived(entry: FileEntry): Boolean {
         return try {
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                val mime = context.contentResolver.getType(android.net.Uri.parse(entry.path))
-                    ?: androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        java.io.File(entry.path),
-                    ).let { context.contentResolver.getType(it) } ?: "*/*"
-                if (entry.path.startsWith("content://")) {
-                    setDataAndType(android.net.Uri.parse(entry.path), mime)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } else {
-                    val file = java.io.File(entry.path)
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context, "${context.packageName}.fileprovider", file
-                    )
-                    setDataAndType(uri, mime)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
+            val mime = mimeForName(entry.name)
+            val uri = if (entry.path.startsWith("content://")) {
+                android.net.Uri.parse(entry.path)
+            } else {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", java.io.File(entry.path)
+                )
             }
-            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             context.startActivity(intent)
+            _status.value = "Abriendo ${entry.name}"
             true
         } catch (t: Throwable) {
-            _status.value = "No hay app para abrir: ${t.message}"
+            _status.value = "No hay app para abrir ${entry.name}: ${t.message}"
             false
         }
     }
 
-    /** Mueve un archivo recibido a otra carpeta SAF (destino elegido por el usuario). */
+    /** Mueve un archivo recibido a otra carpeta (destino elegido por el usuario). */
     fun moveReceived(entry: FileEntry, destTreeUri: android.net.Uri): Boolean {
         return try {
-            val src = if (entry.path.startsWith("content://")) {
-                DocumentFile.fromSingleUri(context, android.net.Uri.parse(entry.path))
-            } else {
-                DocumentFile.fromFile(java.io.File(entry.path))
-            } ?: return false
             val destTree = DocumentFile.fromTreeUri(context, destTreeUri) ?: return false
-            // Copiar bytes al destino y borrar el original.
-            val dest = destTree.createFile("application/octet-stream", entry.name) ?: return false
-            context.contentResolver.openInputStream(src.uri)?.use { input ->
+            // Crear destino con el mismo nombre.
+            val dest = destTree.createFile(mimeForName(entry.name), entry.name) ?: return false
+            // Copiar bytes (funciona para ambos orígenes file:// y content://).
+            val srcUri = if (entry.path.startsWith("content://")) {
+                android.net.Uri.parse(entry.path)
+            } else {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", java.io.File(entry.path)
+                )
+            }
+            var copied = false
+            context.contentResolver.openInputStream(srcUri)?.use { input ->
                 context.contentResolver.openOutputStream(dest.uri)?.use { output ->
                     input.copyTo(output)
+                    copied = true
                 }
             }
-            src.delete()
-            _status.value = "Movido a ${dest.name ?: ""}"
+            if (!copied) return false
+            // Borrar el original según su origen.
+            if (entry.path.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, android.net.Uri.parse(entry.path))?.delete()
+            } else {
+                java.io.File(entry.path).delete()
+            }
+            _status.value = "Movido: ${entry.name}"
             refreshReceivedFiles()
             true
         } catch (t: Throwable) {
             _status.value = "Error al mover: ${t.message}"
             false
+        }
+    }
+
+    /** Deduce el MIME por extension (apk, imagen, audio, video, texto, pdf). */
+    private fun mimeForName(name: String): String {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "apk" -> "application/vnd.android.package-archive"
+            "png", "jpg", "jpeg", "gif", "webp", "bmp" -> "image/*"
+            "mp3", "wav", "ogg", "m4a", "flac", "aac" -> "audio/*"
+            "mp4", "mkv", "avi", "mov", "webm", "3gp" -> "video/*"
+            "txt", "log", "md", "csv" -> "text/plain"
+            "pdf" -> "application/pdf"
+            "htm", "html" -> "text/html"
+            "zip", "rar", "7z" -> "application/zip"
+            "json", "xml" -> "application/$ext"
+            else -> {
+                val fromResolver = runCatching { context.contentResolver.getType(android.net.Uri.parse(name)) }.getOrNull()
+                fromResolver ?: "*/*"
+            }
         }
     }
 

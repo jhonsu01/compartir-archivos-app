@@ -91,6 +91,12 @@ class AppState {
     private val _currentPin = MutableStateFlow<String?>(null)
     val currentPin: StateFlow<String?> = _currentPin.asStateFlow()
 
+    /** Resultado del último envío: la UI lo observa para mostrar confirmación. */
+    private val _sendResult = MutableStateFlow<SendOutcome?>(null)
+    val sendResult: StateFlow<SendOutcome?> = _sendResult.asStateFlow()
+
+    fun clearSendResult() { _sendResult.value = null }
+
     private val _filesToSend = MutableStateFlow<List<FileEntry>>(emptyList())
     val filesToSend: StateFlow<List<FileEntry>> = _filesToSend.asStateFlow()
 
@@ -200,11 +206,19 @@ class AppState {
                 files = outbound,
             )
             client.close()
-            _status.value = when (result) {
-                is TransferResult.Success -> "Enviado: ${result.accepted.reason}"
-                is TransferResult.PairingFailed -> "Emparejamiento fallido: ${result.reason}"
-                is TransferResult.Error -> "Error: ${result.cause.message}"
+            val outcome = when (result) {
+                is TransferResult.Success -> {
+                    // Limpiar selección y PIN para que se note que el envío fue exitoso.
+                    val n = _filesToSend.value.size
+                    _filesToSend.value = emptyList()
+                    _sendPin.value = ""
+                    SendOutcome.Success(n)
+                }
+                is TransferResult.PairingFailed -> SendOutcome.PairingFailed(result.reason)
+                is TransferResult.Error -> SendOutcome.Error(result.cause.message ?: "error desconocido")
             }
+            _status.value = outcome.message()
+            _sendResult.value = outcome
         }
     }
 
@@ -255,3 +269,17 @@ internal fun bestLocalIp(): String =
             .filter { it is java.net.Inet4Address && !it.isLoopbackAddress }
             .firstOrNull()?.hostAddress ?: "127.0.0.1"
     } catch (_: Throwable) { "127.0.0.1" }
+
+/** Resultado del último envío (lo observa la UI para confirmar/limpiar). */
+sealed class SendOutcome {
+    abstract fun message(): String
+    data class Success(val count: Int) : SendOutcome() {
+        override fun message() = "✓ Enviado correctamente ($count archivo(s))"
+    }
+    data class PairingFailed(val reason: String) : SendOutcome() {
+        override fun message() = "Emparejamiento fallido: $reason"
+    }
+    data class Error(val detail: String) : SendOutcome() {
+        override fun message() = "Error: $detail"
+    }
+}
