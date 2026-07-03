@@ -135,20 +135,22 @@ jobs:
     name: Mantener solo la ultima release
     runs-on: ubuntu-latest
     needs: [apk, msi]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      CURRENT: ${{ github.ref_name }}
     steps:
       - name: Borrar releases y tags antiguos
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CURRENT: ${{ github.ref_name }}
         run: |
-          set -e
-          echo "Manteniendo solo la release actual: $CURRENT"
-          # Lista todas las releases (por tag) y borra las que no sean la actual.
-          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+          echo "Repo: $REPO | Manteniendo solo: $CURRENT"
+          # Lista releases (por tag) y borra todas menos la actual.
+          TAGS=$(gh release list --repo "$REPO" --limit 100 --json tagName --jq '.[].tagName' || true)
+          if [ -z "$TAGS" ]; then echo "No hay releases que listar."; exit 0; fi
+          for tag in $TAGS; do
             if [ "$tag" != "$CURRENT" ]; then
-              echo "Borrando release y tag $tag ..."
-              gh release delete "$tag" --yes --cleanup-tag || echo "No se pudo borrar release $tag"
+              echo "Borrando release + tag: $tag"
+              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag --yes || echo "  (no se pudo borrar $tag, sigo)"
             fi
           done
-          echo "Hecho. Releases restantes:"
-          gh release list
+          echo "Releases restantes:"
+          gh release list --repo "$REPO" || true
