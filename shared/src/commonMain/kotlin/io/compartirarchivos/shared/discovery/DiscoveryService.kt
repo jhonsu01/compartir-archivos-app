@@ -29,5 +29,9 @@ interface DiscoveryService {
     fun stop()
 }
 
-/** Factory expect/actual: cada plataforma construye su implementacion. */
-expect fun createDiscoveryService(): DiscoveryService
+/**
+ * Factory común: devuelve el descubrimiento por escaneo de subred, que cubre
+ * toda la LAN (WiFi + Ethernet) automáticamente y no depende de mDNS/multicast
+ * (que el firewall de Windows bloquea inbound).
+ */
+fun createDiscoveryService(): DiscoveryService = SubnetScannerDiscoveryService()

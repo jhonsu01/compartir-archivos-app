@@ -126,5 +126,3 @@ private fun NetworkInterface.isWirelessInterface(): Boolean {
     val n = name.lowercase()
     return n.contains("wlan") || n.contains("wi-fi") || n.contains("wireless") || n.contains("wifi")
 }
-
-actual fun createDiscoveryService(): DiscoveryService = JmdnsDiscoveryService()

@@ -153,5 +153,3 @@ class NsdDiscoveryService : DiscoveryService {
         }
     }
 }
-
-actual fun createDiscoveryService(): DiscoveryService = NsdDiscoveryService()

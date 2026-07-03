@@ -3,9 +3,9 @@ package io.compartirarchivos.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
@@ -39,7 +39,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CompartirArchivos — v0.4.0",
+        title = "CompartirArchivos — v0.5.0",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(900, 600)
@@ -51,16 +51,13 @@ fun main() = application {
 
 @Composable
 private fun AppTheme(content: @Composable () -> Unit) {
-    // Modo oscuro obligatorio (seccion 5)
     val dark = darkColorScheme(
         primary = androidx.compose.ui.graphics.Color(0xFF38BDF8),
         background = androidx.compose.ui.graphics.Color(0xFF101418),
         surface = androidx.compose.ui.graphics.Color(0xFF161B22),
     )
     MaterialTheme(colorScheme = dark) {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            content()
-        }
+        Surface(modifier = Modifier.fillMaxSize()) { content() }
     }
 }
 
@@ -122,22 +119,21 @@ private fun AppScaffold(state: AppState) {
     }
 }
 
-/* ---------------- Pestaña: Dispositivos + PIN ---------------- */
+/* ---------------- Dispositivos + PIN + carpeta descarga ---------------- */
 
 @Composable
 private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
     val devices by state.devices.collectAsState()
     val pin by state.currentPin.collectAsState()
-    val self by state.selfProfile.collectAsState()
     val target by state.sendTarget.collectAsState()
     val downloadFolder by state.downloadFolder.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // Panel PIN
             Card(modifier = Modifier.weight(1f)) {
                 Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Tu PIN de emparejamiento", style = MaterialTheme.typography.titleMedium)
+                    Text("Tu PIN", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(12.dp))
                     Text(
                         pin ?: "------",
@@ -146,42 +142,35 @@ private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("Válido 60 s. Compártelo solo con quien quieras recibir archivos.", style = MaterialTheme.typography.bodySmall)
+                    Text("Válido 60 s", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { state.refreshPin() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Refresh, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Generar nuevo PIN")
+                        Spacer(Modifier.width(6.dp)); Text("Nuevo PIN")
                     }
                 }
             }
 
-            // Lista de dispositivos encontrados (clickeables para enviar)
+            // Dispositivos detectados automáticamente (escáner de subred)
             Card(modifier = Modifier.weight(1.4f)) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Dispositivos en la red", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                if (devices.isEmpty()) {
-                    Text("Buscando dispositivos en la red WiFi...", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Si no aparecen, puede ser el firewall de Windows (bloquea mDNS). " +
-                            "Usa \"Añadir por IP\" con la IP del móvil.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        devices.forEach { d ->
-                            DeviceRow(d, isSelected = target?.id == d.id) { onSelect(d) }
+                    if (devices.isEmpty()) {
+                        Text("Buscando dispositivos en la LAN...", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "El escaneo cubre toda tu red (WiFi y cable). Asegúrate de que la app esté abierta en los demás dispositivos.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            devices.forEach { d ->
+                                DeviceRow(d, isSelected = target?.id == d.id) { onSelect(d) }
+                            }
                         }
                     }
-                }
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
-                    // Conexión manual por IP (fallback cuando mDNS no detecta).
-                    ManualIpRow(onAdd = { ip -> state.addManualTarget(ip) })
                 }
             }
         }
@@ -197,43 +186,8 @@ private fun DevicesScreen(state: AppState, onSelect: (DeviceProfile) -> Unit) {
                 }
                 Button(onClick = {
                     pickDirectoryDialog()?.let { state.setDownloadFolder(java.nio.file.Paths.get(it)) }
-                }) {
-                    Text("Elegir carpeta")
-                }
+                }) { Text("Elegir carpeta") }
             }
-        }
-    }
-}
-
-/** Diálogo nativo de selección de directorio (Swing JFileChooser). */
-private fun pickDirectoryDialog(): String? {
-    val chooser = javax.swing.JFileChooser().apply {
-        fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
-        isAcceptAllFileFilterUsed = false
-    }
-    return if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
-        chooser.selectedFile.absolutePath
-    } else null
-}
-
-/** Fila para añadir un dispositivo destino escribiendo su IP (fallback sin mDNS). */
-@Composable
-private fun ManualIpRow(onAdd: (String) -> Unit) {
-    var ip by remember { mutableStateOf("") }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = ip,
-            onValueChange = { ip = it },
-            label = { Text("IP del dispositivo (ej. 192.168.1.5)") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        Button(
-            onClick = { onAdd(ip) },
-            enabled = ip.isNotBlank() && ip.contains("."),
-        ) {
-            Text("Añadir por IP")
         }
     }
 }
@@ -258,17 +212,15 @@ private fun DeviceRow(d: DeviceProfile, isSelected: Boolean, onClick: () -> Unit
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(d.name, fontWeight = FontWeight.Medium)
-            Text("${d.host}:${d.port} · ${d.type}", style = MaterialTheme.typography.bodySmall)
+            Text("${d.host} · ${d.type}", style = MaterialTheme.typography.bodySmall)
         }
         if (isSelected) {
             Icon(Icons.Filled.CheckCircle, contentDescription = "Seleccionado", tint = MaterialTheme.colorScheme.primary)
-        } else {
-            TextButton(onClick = onClick) { Text("Seleccionar") }
         }
     }
 }
 
-/* ---------------- Pestaña: Enviar ---------------- */
+/* ---------------- Enviar ---------------- */
 
 @Composable
 private fun SendScreen(state: AppState) {
@@ -283,9 +235,8 @@ private fun SendScreen(state: AppState) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Enviar archivos", style = MaterialTheme.typography.titleMedium)
-
         Text("Destino:", style = MaterialTheme.typography.bodyMedium)
-        if (devices.isEmpty()) Text("No hay dispositivos. Ve a la pestaña Dispositivos.", style = MaterialTheme.typography.bodySmall)
+        if (devices.isEmpty()) Text("Buscando dispositivos en la LAN...", style = MaterialTheme.typography.bodySmall)
         devices.forEach { d ->
             val isTarget = target?.id == d.id
             Row(
@@ -315,7 +266,6 @@ private fun SendScreen(state: AppState) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth(0.4f),
         )
-
         Button(
             onClick = { state.send() },
             enabled = target != null && pin.length == 6 && selected.isNotEmpty(),
@@ -327,7 +277,7 @@ private fun SendScreen(state: AppState) {
     }
 }
 
-/* ---------------- Pestaña: Explorador ---------------- */
+/* ---------------- Explorador ---------------- */
 
 @Composable
 private fun ExplorerScreen(state: AppState) {
@@ -379,4 +329,15 @@ private fun FileRow(entry: FileEntry, isSelected: Boolean, onClick: () -> Unit, 
         }
         TextButton(onClick = onClick) { Text(if (entry.isDirectory) "Abrir" else "Marcar") }
     }
+}
+
+/** Diálogo nativo de selección de directorio (Swing JFileChooser). */
+private fun pickDirectoryDialog(): String? {
+    val chooser = javax.swing.JFileChooser().apply {
+        fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+        isAcceptAllFileFilterUsed = false
+    }
+    return if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+        chooser.selectedFile.absolutePath
+    } else null
 }

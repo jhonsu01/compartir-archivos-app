@@ -34,6 +34,13 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.napier)
+
+            // Cliente HTTP + serialización: en commonMain porque el escáner de
+            // subred (SubnetScanner) y el TransferClient viven aquí.
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.cio)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
         }
 
         val desktopMain by getting {
@@ -41,16 +48,12 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.jmdns)
-                // Networking (Netty/CIO). Duplicado en androidMain; ambos son JVM.
+                // Servidor HTTP embebido (Netty): solo JVM.
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.netty)
                 implementation(libs.ktor.server.content.negotiation)
                 implementation(libs.ktor.server.status.pages)
                 implementation(libs.ktor.server.call.logging)
-                implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.cio)
-                implementation(libs.ktor.client.content.negotiation)
-                implementation(libs.ktor.serialization.json)
             }
         }
 
@@ -59,16 +62,12 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.androidx.core.ktx)
                 implementation(libs.androidx.documentfile)
-                // Networking (Netty/CIO). Igual que desktopMain.
+                // Servidor HTTP embebido (Netty): solo JVM.
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.netty)
                 implementation(libs.ktor.server.content.negotiation)
                 implementation(libs.ktor.server.status.pages)
                 implementation(libs.ktor.server.call.logging)
-                implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.cio)
-                implementation(libs.ktor.client.content.negotiation)
-                implementation(libs.ktor.serialization.json)
             }
         }
     }
